@@ -1,0 +1,74 @@
+# render.yaml - Backend Service Configuration for Render
+services:
+  - type: web
+    name: my-app-backend
+    env: node
+    region: oregon  # Options: oregon, frankfurt, singapore
+    plan: free      # Options: free, starter, professional
+    
+    # Build and start commands
+    buildCommand: npm install
+    startCommand: npm start
+    
+    # Auto-deploy from main branch
+    autoDeploy: true
+    branch: main
+    pullRequestPreviewsEnabled: false  # Set to true if you want PR previews
+    
+    # Health check (Render will ping this endpoint)
+    healthCheckPath: /api/health
+    initialDelaySec: 30
+    
+    # Environment variables - UPDATED FOR TiDB
+    envVars:
+      # Server Configuration
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000  # Render automatically provides PORT
+      
+      # CORS Configuration
+      - key: CORS_ORIGIN
+        value: https://my-app-frontend.onrender.com
+      
+      # TiDB Database Configuration (Individual Variables)
+      - key: DB_HOST
+        value: gateway01.eu-central-1.prod.aws.tidbcloud.com
+      - key: DB_PORT
+        value: "4000"  # Must be string for Render
+      - key: DB_USER
+        value: 26B7PnJsxyEcX7C.root
+      - key: DB_PASSWORD
+        sync: false  # MUST set manually in Render dashboard
+      - key: DB_NAME
+        value: fortune500
+      - key: DB_SSL
+        value: "true"  # Must be string
+      
+      # JWT Configuration (Generate in Render dashboard)
+      - key: JWT_SECRET
+        generateValue: true  # Render will generate a secure secret
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      
+      # Logging Configuration
+      - key: LOG_LEVEL
+        value: info
+      
+      # Database Optimization
+      - key: DB_POOL_MAX
+        value: "15"
+      - key: DB_POOL_MIN
+        value: "2"
+      - key: DB_CONNECT_TIMEOUT
+        value: "60000"
+    
+    # Optional: Custom domains
+    # domains:
+    #   - api.yourdomain.com
+    
+    # Optional: Disk for file storage (if needed)
+    # disk:
+    #   name: data
+    #   mountPath: /data
+    #   sizeGB: 1
