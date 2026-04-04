@@ -29,7 +29,7 @@ services:
       
       # CORS Configuration
       - key: CORS_ORIGIN
-        value: https://my-app-frontend.onrender.com
+        value: https://pmsimplex-f-04-04-26.onrender.com,http://localhost:5173,http://localhost:3000
       
       # TiDB Database Configuration (Individual Variables)
       - key: DB_HOST
