@@ -1,4 +1,4 @@
-// server.js - COMPLETE VERSION (Full 999+ lines equivalent)
+// server.js - COMPLETE VERSION WITH CORS FIX
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
@@ -65,10 +65,15 @@ import { bootstrap, seedDefaultRoles, bootstrapSuperAdmin, seedTestGuest, seedTe
 const app = express();
 
 // ================================================
-// 3. CORS CONFIGURATION - FIXED FOR FILE UPLOADS
+// 3. CORS CONFIGURATION - FIXED: READS FROM ENV VARIABLE
 // ================================================
+// Read allowed origins from environment variable or use defaults
+const allowedOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'];
+
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Application', 'X-Environment', 'x-api-key'],
   exposedHeaders: ['Content-Disposition'],
@@ -332,7 +337,7 @@ try {
 }
 
 // ================================================
-// 6.5 CORPORATE ROUTES (NEW)
+// 6.5 CORPORATE ROUTES
 // ================================================
 
 // CORPORATE ROUTES
@@ -358,7 +363,7 @@ app.get('/api/health', (req, res) => {
       jobs: cronService.listJobs()
     },
     cors: {
-      allowedOrigins: corsOptions.origin,
+      allowedOrigins: allowedOrigins,
       allowedMethods: corsOptions.methods
     },
     database: {
@@ -964,7 +969,7 @@ app.use((err, req, res, next) => {
       message: 'CORS error: ' + err.message,
       environment: process.env.NODE_ENV || 'not set',
       corsConfiguration: {
-        allowedOrigins: corsOptions.origin,
+        allowedOrigins: allowedOrigins,
         allowedMethods: corsOptions.methods,
         allowedHeaders: corsOptions.allowedHeaders
       }
@@ -1037,7 +1042,7 @@ const startServer = async () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔧 CORS Configuration:`);
-      console.log(`   Allowed Origins: ${corsOptions.origin.join(', ')}`);
+      console.log(`   Allowed Origins: ${allowedOrigins.join(', ')}`);
       console.log(`   Allowed Methods: ${corsOptions.methods.join(', ')}`);
       console.log(`⏰ Cron Jobs: ${process.env.ENABLE_CRON === 'true' ? '✅ Enabled' : '❌ Disabled'}`);
       console.log(`🔍 Health check: http://localhost:${PORT}/api/health`);
