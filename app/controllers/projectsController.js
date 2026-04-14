@@ -1,6 +1,6 @@
 // backend/app/controllers/projectsController.js
 
-import { Project, BusinessUnit, User, EmissionPolicy, PolicyDocType, ProjDoc, DocType, EmissionPeriod } from '../models/index.js';
+import { Project, BusinessUnit, User, EmissionPolicy, PolicyDocType, ProjDoc, DocType, DocRevision, EmissionPeriod } from '../models/index.js';
 import AppError from '../utils/appError.js';
 import { Op } from 'sequelize';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -174,7 +174,6 @@ class ProjectsController {
       is_active: true
     };
 
-    // Check if business unit exists
     if (projectData.business_unit_id) {
       const businessUnit = await BusinessUnit.findByPk(projectData.business_unit_id);
       if (!businessUnit) {
@@ -182,7 +181,6 @@ class ProjectsController {
       }
     }
 
-    // Check if project code already exists
     const existingProject = await Project.findOne({
       where: { code: projectData.code }
     });
@@ -212,7 +210,6 @@ class ProjectsController {
       return next(new AppError('Project not found', 404));
     }
 
-    // Check if business unit exists if being updated
     if (req.body.business_unit_id && req.body.business_unit_id !== project.business_unit_id) {
       const businessUnit = await BusinessUnit.findByPk(req.body.business_unit_id);
       if (!businessUnit) {
@@ -220,7 +217,6 @@ class ProjectsController {
       }
     }
 
-    // Check if project code already exists if being updated
     if (req.body.code && req.body.code !== project.code) {
       const existingProject = await Project.findOne({
         where: { 
@@ -234,7 +230,6 @@ class ProjectsController {
       }
     }
 
-    // Update only provided fields
     const updatableFields = [
       'code', 'name', 'client_name', 'start_date', 'planned_end_date',
       'baseline_finish_date', 'current_finish_date', 'description',
@@ -253,7 +248,6 @@ class ProjectsController {
 
     await project.update(updateData);
 
-    // Fetch updated project with associations
     const updatedProject = await Project.findByPk(id, {
       include: [
         {
@@ -283,7 +277,6 @@ class ProjectsController {
       return next(new AppError('Project not found', 404));
     }
 
-    // Soft delete - just set is_active to false
     await project.update({ 
       is_active: false,
       last_modified_at: new Date()
@@ -307,7 +300,6 @@ class ProjectsController {
       return next(new AppError('Project not found', 404));
     }
 
-    // Check if there are associated documents
     const documentsCount = await ProjDoc?.count({ where: { project_id: id } }) || 0;
 
     if (documentsCount > 0) {
@@ -712,7 +704,6 @@ class ProjectsController {
   getProjectDefaultPolicy = asyncHandler(async (req, res, next) => {
     const { projectId, docTypeId } = req.params;
 
-    // Validate UUIDs
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(projectId)) {
       return next(new AppError('Invalid project ID format', 400));
@@ -721,13 +712,11 @@ class ProjectsController {
       return next(new AppError('Invalid document type ID format', 400));
     }
 
-    // Validate project exists
     const project = await Project.findByPk(projectId);
     if (!project) {
       return next(new AppError('Project not found', 404));
     }
 
-    // Find the policy associated with this document type in this project
     const policy = await EmissionPolicy.findOne({
       where: { project_id: projectId },
       include: [
@@ -799,6 +788,10 @@ class ProjectsController {
     });
   });
 
+  // ============================================
+  // AGGREGATED DOCUMENTS ENDPOINT
+  // ============================================
+
   // @desc    Get aggregated document statistics for a project
   // @route   GET /api/projects/:projectId/documents/aggregated
   // @access  Private
@@ -819,23 +812,31 @@ class ProjectsController {
     }
 
     // Build where clause for documents
-    const whereClause = { project_id: projectId };
+    const whereClause = { project_id: projectId, status: 'active' };
 
     // Filter by document type
     if (documentType === 'adhoc') {
-      whereClause.is_periodic = false;
+      whereClause.emission_id = null;
     } else if (documentType === 'periodic') {
-      whereClause.is_periodic = true;
+      whereClause.emission_id = { [Op.ne]: null };
     }
 
-    // Get all documents for the project with their doc type
+    // Get all documents for the project with their doc type and latest revision
     const documents = await ProjDoc.findAll({
       where: whereClause,
       include: [
         {
           model: DocType,
-          as: 'docType',
-          attributes: ['id', 'name', 'category', 'subcategory']
+          as: 'doc_type',
+          attributes: ['id', 'label', 'entity_type', 'is_periodic']
+        },
+        {
+          model: DocRevision,
+          as: 'revisions',
+          required: false,
+          limit: 1,
+          order: [['revision', 'DESC']],
+          separate: false
         }
       ]
     });
@@ -843,37 +844,35 @@ class ProjectsController {
     // Filter by category if specified
     let filteredDocs = documents;
     if (category) {
-      filteredDocs = documents.filter(doc => doc.docType?.category === category);
+      filteredDocs = documents.filter(doc => {
+        const docLabel = doc.doc_type?.label || '';
+        const docEntityType = doc.doc_type?.entity_type || '';
+        return docLabel.toLowerCase().includes(category.toLowerCase()) || 
+               docEntityType.toLowerCase().includes(category.toLowerCase());
+      });
     }
 
     // Separate ad-hoc and periodic documents
-    const adhocDocs = filteredDocs.filter(doc => !doc.is_periodic);
-    const periodicDocs = filteredDocs.filter(doc => doc.is_periodic);
-
-    // For periodic documents, get the last period status
-    const periodicDocsWithLastPeriod = await Promise.all(
-      periodicDocs.map(async (doc) => {
-        const lastPeriod = await EmissionPeriod.findOne({
-          where: { document_id: doc.id },
-          order: [['period_number', 'DESC']],
-          limit: 1
-        });
-        
-        return {
-          ...doc.toJSON(),
-          lastPeriodStatus: lastPeriod?.status || 'pending'
-        };
-      })
-    );
+    const adhocDocs = filteredDocs.filter(doc => !doc.emission_id);
+    const periodicDocs = filteredDocs.filter(doc => doc.emission_id);
 
     // Calculate ad-hoc statistics
     const adhocTotal = adhocDocs.length;
-    const adhocReceived = adhocDocs.filter(doc => doc.current_revision_file !== null).length;
+    const adhocReceived = adhocDocs.filter(doc => {
+      const revisions = doc.revisions || [];
+      return revisions.length > 0 && revisions.some(rev => rev.status === 'received');
+    }).length;
 
     // Calculate periodic statistics
-    const periodicTotal = periodicDocsWithLastPeriod.length;
-    const periodicReceived = periodicDocsWithLastPeriod.filter(doc => doc.lastPeriodStatus === 'received').length;
-    const periodicOverdue = periodicDocsWithLastPeriod.filter(doc => doc.lastPeriodStatus === 'overdue').length;
+    const periodicTotal = periodicDocs.length;
+    const periodicReceived = periodicDocs.filter(doc => {
+      const revisions = doc.revisions || [];
+      return revisions.length > 0 && revisions.some(rev => rev.status === 'received');
+    }).length;
+    const periodicOverdue = periodicDocs.filter(doc => {
+      const revisions = doc.revisions || [];
+      return revisions.length === 0 || revisions.some(rev => rev.status === 'late');
+    }).length;
 
     const total = adhocTotal + periodicTotal;
     const received = adhocReceived + periodicReceived;
