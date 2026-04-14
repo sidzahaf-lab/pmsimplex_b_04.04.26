@@ -141,6 +141,20 @@ router.get(
 );
 
 /**
+ * GET /api/projects/:projectId/documents/aggregated
+ * Get aggregated document statistics for a project by category
+ * Query params:
+ *   - category: string (optional) - filter by document category (HSE, Technical, Planning, etc.)
+ *   - referencePeriod: string (optional) - reference period for periodic documents
+ *   - documentType: 'all' | 'adhoc' | 'periodic' (optional)
+ */
+router.get(
+  '/:projectId/documents/aggregated',
+  projectsValidation.validateProjectId,
+  projectsController.getProjectDocumentsAggregated
+);
+
+/**
  * POST /api/projects
  * Create a new project
  */
@@ -204,7 +218,6 @@ router.delete(
   projectsController.hardDeleteProject
 );
 
-// Add this route (around line where you have other project routes)
 /**
  * @route   GET /api/projects/:projectId/doc-types/:docTypeId/policy-check
  * @desc    Check if a document type is already assigned to a policy

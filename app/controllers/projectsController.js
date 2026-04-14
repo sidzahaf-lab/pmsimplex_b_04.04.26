@@ -1,5 +1,6 @@
 // backend/app/controllers/projectsController.js
-import { Project, BusinessUnit, User, EmissionPolicy, PolicyDocType } from '../models/index.js';
+
+import { Project, BusinessUnit, User, EmissionPolicy, PolicyDocType, ProjDoc, DocType, EmissionPeriod } from '../models/index.js';
 import AppError from '../utils/appError.js';
 import { Op } from 'sequelize';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -306,8 +307,7 @@ class ProjectsController {
       return next(new AppError('Project not found', 404));
     }
 
-    // Vérifier s'il y a des documents associés
-    const { ProjDoc } = await import('../models/index.js');
+    // Check if there are associated documents
     const documentsCount = await ProjDoc?.count({ where: { project_id: id } }) || 0;
 
     if (documentsCount > 0) {
@@ -738,7 +738,7 @@ class ProjectsController {
           where: { doc_type_id: docTypeId }
         }
       ],
-      order: [['created_at', 'DESC']] // Get the most recent if multiple
+      order: [['created_at', 'DESC']]
     });
 
     res.status(200).json({
@@ -795,6 +795,104 @@ class ProjectsController {
       status: 'success',
       data: {
         project
+      }
+    });
+  });
+
+  // @desc    Get aggregated document statistics for a project
+  // @route   GET /api/projects/:projectId/documents/aggregated
+  // @access  Private
+  getProjectDocumentsAggregated = asyncHandler(async (req, res, next) => {
+    const { projectId } = req.params;
+    const { category, referencePeriod, documentType = 'all' } = req.query;
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(projectId)) {
+      return next(new AppError('Invalid project ID format', 400));
+    }
+
+    // Validate project exists
+    const project = await Project.findByPk(projectId);
+    if (!project) {
+      return next(new AppError('Project not found', 404));
+    }
+
+    // Build where clause for documents
+    const whereClause = { project_id: projectId };
+
+    // Filter by document type
+    if (documentType === 'adhoc') {
+      whereClause.is_periodic = false;
+    } else if (documentType === 'periodic') {
+      whereClause.is_periodic = true;
+    }
+
+    // Get all documents for the project with their doc type
+    const documents = await ProjDoc.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: DocType,
+          as: 'docType',
+          attributes: ['id', 'name', 'category', 'subcategory']
+        }
+      ]
+    });
+
+    // Filter by category if specified
+    let filteredDocs = documents;
+    if (category) {
+      filteredDocs = documents.filter(doc => doc.docType?.category === category);
+    }
+
+    // Separate ad-hoc and periodic documents
+    const adhocDocs = filteredDocs.filter(doc => !doc.is_periodic);
+    const periodicDocs = filteredDocs.filter(doc => doc.is_periodic);
+
+    // For periodic documents, get the last period status
+    const periodicDocsWithLastPeriod = await Promise.all(
+      periodicDocs.map(async (doc) => {
+        const lastPeriod = await EmissionPeriod.findOne({
+          where: { document_id: doc.id },
+          order: [['period_number', 'DESC']],
+          limit: 1
+        });
+        
+        return {
+          ...doc.toJSON(),
+          lastPeriodStatus: lastPeriod?.status || 'pending'
+        };
+      })
+    );
+
+    // Calculate ad-hoc statistics
+    const adhocTotal = adhocDocs.length;
+    const adhocReceived = adhocDocs.filter(doc => doc.current_revision_file !== null).length;
+
+    // Calculate periodic statistics
+    const periodicTotal = periodicDocsWithLastPeriod.length;
+    const periodicReceived = periodicDocsWithLastPeriod.filter(doc => doc.lastPeriodStatus === 'received').length;
+    const periodicOverdue = periodicDocsWithLastPeriod.filter(doc => doc.lastPeriodStatus === 'overdue').length;
+
+    const total = adhocTotal + periodicTotal;
+    const received = adhocReceived + periodicReceived;
+    const hasDocuments = total > 0;
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        total,
+        received,
+        overdueCount: periodicOverdue,
+        hasDocuments,
+        details: {
+          adhocTotal,
+          adhocReceived,
+          periodicTotal,
+          periodicReceived,
+          periodicOverdue
+        }
       }
     });
   });
