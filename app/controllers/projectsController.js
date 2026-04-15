@@ -799,29 +799,24 @@ class ProjectsController {
     const { projectId } = req.params;
     const { category, referencePeriod, documentType = 'all' } = req.query;
 
-    // Validate UUID format
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(projectId)) {
       return next(new AppError('Invalid project ID format', 400));
     }
 
-    // Validate project exists
     const project = await Project.findByPk(projectId);
     if (!project) {
       return next(new AppError('Project not found', 404));
     }
 
-    // Build where clause for documents
     const whereClause = { project_id: projectId, status: 'active' };
 
-    // Filter by document type
     if (documentType === 'adhoc') {
       whereClause.emission_id = null;
     } else if (documentType === 'periodic') {
       whereClause.emission_id = { [Op.ne]: null };
     }
 
-    // Get all documents for the project with their doc type and latest revision
     const documents = await ProjDoc.findAll({
       where: whereClause,
       include: [
@@ -841,7 +836,6 @@ class ProjectsController {
       ]
     });
 
-    // Filter by category if specified
     let filteredDocs = documents;
     if (category) {
       filteredDocs = documents.filter(doc => {
@@ -852,18 +846,15 @@ class ProjectsController {
       });
     }
 
-    // Separate ad-hoc and periodic documents
     const adhocDocs = filteredDocs.filter(doc => !doc.emission_id);
     const periodicDocs = filteredDocs.filter(doc => doc.emission_id);
 
-    // Calculate ad-hoc statistics
     const adhocTotal = adhocDocs.length;
     const adhocReceived = adhocDocs.filter(doc => {
       const revisions = doc.revisions || [];
       return revisions.length > 0 && revisions.some(rev => rev.status === 'received');
     }).length;
 
-    // Calculate periodic statistics
     const periodicTotal = periodicDocs.length;
     const periodicReceived = periodicDocs.filter(doc => {
       const revisions = doc.revisions || [];
@@ -891,6 +882,117 @@ class ProjectsController {
           periodicTotal,
           periodicReceived,
           periodicOverdue
+        }
+      }
+    });
+  });
+
+  // ============================================
+  // NOUVELLES MÉTHODES POUR LES DOCUMENTS
+  // ============================================
+
+  // @desc    Check if a document number is already used in the project
+  // @route   GET /api/projects/:projectId/documents/check-number
+  // @access  Private
+  checkDocumentNumberAvailability = asyncHandler(async (req, res, next) => {
+    const { projectId } = req.params;
+    const { number, docTypeId } = req.query;
+
+    if (!number) {
+      return res.status(200).json({
+        status: 'success',
+        data: { available: true }
+      });
+    }
+
+    const whereClause = {
+      project_id: projectId,
+      doc_number: number
+    };
+
+    if (docTypeId) {
+      whereClause.doc_type_id = docTypeId;
+    }
+
+    const existingDoc = await ProjDoc.findOne({
+      where: whereClause
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        available: !existingDoc
+      }
+    });
+  });
+
+  // @desc    Get all documents for a project with optional filters
+  // @route   GET /api/projects/:projectId/documents
+  // @access  Private
+  getProjectDocuments = asyncHandler(async (req, res, next) => {
+    const { projectId } = req.params;
+    const { 
+      docTypeId, 
+      limit = 100, 
+      offset = 0,
+      category,
+      status
+    } = req.query;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(projectId)) {
+      return next(new AppError('Invalid project ID format', 400));
+    }
+
+    const whereClause = { project_id: projectId };
+
+    if (docTypeId) {
+      whereClause.doc_type_id = docTypeId;
+    }
+
+    if (status) {
+      whereClause.status = status;
+    }
+
+    const documents = await ProjDoc.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: DocType,
+          as: 'doc_type',
+          attributes: ['id', 'label', 'entity_type', 'is_periodic', 'category']
+        },
+        {
+          model: DocRevision,
+          as: 'revisions',
+          required: false,
+          limit: 1,
+          order: [['revision', 'DESC']],
+          separate: false
+        }
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['created_at', 'DESC']],
+      distinct: true
+    });
+
+    let filteredDocuments = documents.rows;
+    if (category) {
+      filteredDocuments = documents.rows.filter(doc => {
+        const docCategory = doc.doc_type?.category || '';
+        return docCategory.toLowerCase().includes(category.toLowerCase());
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        documents: filteredDocuments,
+        pagination: {
+          total: documents.count,
+          limit: parseInt(limit),
+          offset: parseInt(offset)
         }
       }
     });

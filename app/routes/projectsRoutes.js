@@ -229,4 +229,24 @@ router.get(
   checkDocTypeAssignment
 );
 
+/**
+ * GET /api/projects/:projectId/documents/check-number
+ * Check if a document number is already used
+ */
+router.get(
+  '/:projectId/documents/check-number',
+  projectsValidation.validateProjectId,
+  projectsController.checkDocumentNumberAvailability
+);
+
+/**
+ * GET /api/projects/:projectId/documents
+ * Get all documents for a project
+ */
+router.get(
+  '/:projectId/documents',
+  projectsValidation.validateProjectId,
+  projectsController.getProjectDocuments
+);
+
 export default router;
