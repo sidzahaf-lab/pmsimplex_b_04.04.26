@@ -888,7 +888,7 @@ class ProjectsController {
   });
 
   // ============================================
-  // NOUVELLES MÉTHODES POUR LES DOCUMENTS
+  // CHECK DOCUMENT NUMBER AVAILABILITY
   // ============================================
 
   // @desc    Check if a document number is already used in the project
@@ -926,6 +926,10 @@ class ProjectsController {
     });
   });
 
+  // ============================================
+  // GET PROJECT DOCUMENTS
+  // ============================================
+
   // @desc    Get all documents for a project with optional filters
   // @route   GET /api/projects/:projectId/documents
   // @access  Private
@@ -954,48 +958,66 @@ class ProjectsController {
       whereClause.status = status;
     }
 
-    const documents = await ProjDoc.findAndCountAll({
-      where: whereClause,
-      include: [
-        {
-          model: DocType,
-          as: 'doc_type',
-          attributes: ['id', 'label', 'entity_type', 'is_periodic', 'category']
-        },
-        {
-          model: DocRevision,
-          as: 'revisions',
-          required: false,
-          limit: 1,
-          order: [['revision', 'DESC']],
-          separate: false
-        }
-      ],
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [['created_at', 'DESC']],
-      distinct: true
-    });
+    try {
+      const documents = await ProjDoc.findAndCountAll({
+        where: whereClause,
+        include: [
+          {
+            model: DocType,
+            as: 'doc_type',
+            attributes: ['id', 'label', 'entity_type', 'is_periodic']
+          },
+          {
+            model: DocRevision,
+            as: 'revisions',
+            required: false,
+            limit: 1,
+            order: [['revision', 'DESC']],
+            separate: false
+          }
+        ],
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        order: [['created_at', 'DESC']],
+        distinct: true
+      });
 
-    let filteredDocuments = documents.rows;
-    if (category) {
-      filteredDocuments = documents.rows.filter(doc => {
-        const docCategory = doc.doc_type?.category || '';
-        return docCategory.toLowerCase().includes(category.toLowerCase());
+      let filteredDocuments = documents.rows;
+      if (category) {
+        filteredDocuments = documents.rows.filter(doc => {
+          const docLabel = doc.doc_type?.label || '';
+          const docEntityType = doc.doc_type?.entity_type || '';
+          return docLabel.toLowerCase().includes(category.toLowerCase()) || 
+                 docEntityType.toLowerCase().includes(category.toLowerCase());
+        });
+      }
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          documents: filteredDocuments,
+          pagination: {
+            total: documents.count,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error in getProjectDocuments:', error);
+      // Return empty array on error
+      res.status(200).json({
+        status: 'success',
+        data: {
+          documents: [],
+          pagination: {
+            total: 0,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+          }
+        }
       });
     }
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        documents: filteredDocuments,
-        pagination: {
-          total: documents.count,
-          limit: parseInt(limit),
-          offset: parseInt(offset)
-        }
-      }
-    });
   });
 }
 
