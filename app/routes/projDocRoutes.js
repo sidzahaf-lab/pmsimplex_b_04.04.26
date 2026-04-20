@@ -1,4 +1,5 @@
 // backend/app/routes/projdocRoutes.js
+
 import express from 'express';
 const router = express.Router();
 
@@ -17,7 +18,7 @@ import {
   generatePeriods,
   getDocumentPeriodsWithStatus,
   getDocStats,
-  checkUniqueDocument // 🔥 AJOUTER CETTE LIGNE
+  checkUniqueDocument
 } from '../controllers/projDocController.js';
 
 // Import validations
@@ -39,7 +40,7 @@ import globalValidators from '../middleware/globalValidators.js';
 // =============================================
 
 /**
- * @route   GET /api/projects/:projectId/docs/check-number/:docNumber
+ * @route   GET /api/projdocs/project/:projectId/check-number/:docNumber
  * @desc    Check document number availability
  * @access  Public
  */
@@ -50,7 +51,7 @@ router.get(
 );
 
 /**
- * @route   GET /api/projects/:projectId/docs/number/:docNumber
+ * @route   GET /api/projdocs/project/:projectId/number/:docNumber
  * @desc    Get document by doc number
  * @access  Public
  */
@@ -79,35 +80,35 @@ router.get(
 );
 
 /**
- * @route   GET /api/projects/:projectId/docs
+ * @route   GET /api/projdocs/project/:projectId/docs
  * @desc    Get documents by project
  * @access  Private
  */
 router.get(
-  '/project/:projectId',
+  '/project/:projectId/docs',
   projectDocsValidation,
   globalValidators.validatePagination,
   getDocsByProject
 );
 
 /**
- * @route   GET /api/projects/:projectId/docs/stats
+ * @route   GET /api/projdocs/project/:projectId/docs/stats
  * @desc    Get document statistics
  * @access  Private
  */
 router.get(
-  '/project/:projectId/stats',
+  '/project/:projectId/docs/stats',
   projectDocsValidation,
   getDocStats
 );
 
 /**
- * @route   POST /api/projects/:projectId/docs
+ * @route   POST /api/projdocs/project/:projectId/docs
  * @desc    Create document
  * @access  Private
  */
 router.post(
-  '/project/:projectId',
+  '/project/:projectId/docs',
   createProjDocValidation,
   createProjDoc
 );
@@ -196,8 +197,7 @@ router.delete(
  */
 router.get(
   '/check-unique/:projectId/:docTypeId',
-  // Ajoutez une validation si nécessaire
-  checkUniqueDocument // Maintenant correctement importé
+  checkUniqueDocument
 );
 
 export default router;

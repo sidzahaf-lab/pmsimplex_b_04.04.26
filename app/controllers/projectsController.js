@@ -1,6 +1,6 @@
 // backend/app/controllers/projectsController.js
 
-import { Project, BusinessUnit, User, EmissionPolicy, PolicyDocType, ProjDoc, DocType, DocRevision, EmissionPeriod } from '../models/index.js';
+import { Project, BusinessUnit, User, EmissionPolicy, PolicyDocType, ProjDoc, DocType, DocRevision, EmissionPeriod, DocSubcategory, DocCategory } from '../models/index.js';
 import AppError from '../utils/appError.js';
 import { Op } from 'sequelize';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -789,7 +789,7 @@ class ProjectsController {
   });
 
   // ============================================
-  // AGGREGATED DOCUMENTS ENDPOINT
+  // AGGREGATED DOCUMENTS ENDPOINT - CORRIGÉ
   // ============================================
 
   // @desc    Get aggregated document statistics for a project
@@ -817,12 +817,27 @@ class ProjectsController {
       whereClause.emission_id = { [Op.ne]: null };
     }
 
+    // Récupérer les documents avec la hiérarchie complète des catégories
     const documents = await ProjDoc.findAll({
       where: whereClause,
       include: [
         {
           model: DocType,
           as: 'doc_type',
+          include: [
+            {
+              model: DocSubcategory,
+              as: 'subcategory',
+              include: [
+                {
+                  model: DocCategory,
+                  as: 'category',
+                  attributes: ['id', 'label']
+                }
+              ],
+              attributes: ['id', 'label']
+            }
+          ],
           attributes: ['id', 'label', 'entity_type', 'is_periodic']
         },
         {
@@ -836,14 +851,15 @@ class ProjectsController {
       ]
     });
 
+    // Fonction pour obtenir le nom de la catégorie depuis la hiérarchie
+    const getCategoryName = (doc) => {
+      return doc.doc_type?.subcategory?.category?.label || null;
+    };
+
+    // Filtrer par catégorie si spécifiée
     let filteredDocs = documents;
     if (category) {
-      filteredDocs = documents.filter(doc => {
-        const docLabel = doc.doc_type?.label || '';
-        const docEntityType = doc.doc_type?.entity_type || '';
-        return docLabel.toLowerCase().includes(category.toLowerCase()) || 
-               docEntityType.toLowerCase().includes(category.toLowerCase());
-      });
+      filteredDocs = documents.filter(doc => getCategoryName(doc) === category);
     }
 
     const adhocDocs = filteredDocs.filter(doc => !doc.emission_id);

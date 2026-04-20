@@ -1,5 +1,5 @@
 // backend/app/services/projDocService.js
-import { ProjDoc, Project, DocType, EmissionPolicy, EmissionPeriod, DocRevision, User, sequelize } from '../models/index.js';
+import { ProjDoc, Project, DocType, EmissionPolicy, EmissionPeriod, DocRevision, User, DocSubcategory, DocCategory, sequelize } from '../models/index.js';
 import AppError from '../utils/appError.js';
 import { Op } from 'sequelize';
 import { ENTITY_TABLE_MAP } from '../config/entityTableMap.js';
@@ -51,7 +51,18 @@ class projDocService {
         {
           model: DocType,
           as: 'doc_type',
-          include: ['subcategory']
+          include: [
+            {
+              model: DocSubcategory,
+              as: 'subcategory',
+              include: [
+                {
+                  model: DocCategory,
+                  as: 'category'
+                }
+              ]
+            }
+          ]
         },
         {
           model: EmissionPolicy,
@@ -76,8 +87,14 @@ class projDocService {
     // Transformer pour avoir latest_revision directement accessible
     const docs = result.rows.map(doc => {
       const docJson = doc.toJSON();
+      // Extract category and subcategory from nested relations
+      const category = docJson.doc_type?.subcategory?.category?.label || 'Autre';
+      const subcategory = docJson.doc_type?.subcategory?.label || null;
+      
       return {
         ...docJson,
+        category,
+        subcategory,
         latest_revision: docJson.revisions?.[0] || null
       };
     });
@@ -135,7 +152,18 @@ class projDocService {
         {
           model: DocType,
           as: 'doc_type',
-          include: ['subcategory']
+          include: [
+            {
+              model: DocSubcategory,
+              as: 'subcategory',
+              include: [
+                {
+                  model: DocCategory,
+                  as: 'category'
+                }
+              ]
+            }
+          ]
         },
         {
           model: EmissionPolicy,
@@ -157,11 +185,17 @@ class projDocService {
       distinct: true
     });
 
-    // Transformer pour avoir latest_revision directement accessible
+    // Transformer pour avoir latest_revision directement accessible et ajouter category/subcategory
     const docs = result.rows.map(doc => {
       const docJson = doc.toJSON();
+      // Extract category and subcategory from nested relations
+      const category = docJson.doc_type?.subcategory?.category?.label || 'Autre';
+      const subcategory = docJson.doc_type?.subcategory?.label || null;
+      
       return {
         ...docJson,
+        category,
+        subcategory,
         latest_revision: docJson.revisions?.[0] || null
       };
     });
@@ -189,7 +223,18 @@ class projDocService {
         {
           model: DocType,
           as: 'doc_type',
-          include: ['subcategory']
+          include: [
+            {
+              model: DocSubcategory,
+              as: 'subcategory',
+              include: [
+                {
+                  model: DocCategory,
+                  as: 'category'
+                }
+              ]
+            }
+          ]
         },
         {
           model: EmissionPolicy,
@@ -207,8 +252,13 @@ class projDocService {
 
     if (doc) {
       const docJson = doc.toJSON();
+      const category = docJson.doc_type?.subcategory?.category?.label || 'Autre';
+      const subcategory = docJson.doc_type?.subcategory?.label || null;
+      
       return {
         ...docJson,
+        category,
+        subcategory,
         latest_revision: docJson.revisions?.[0] || null
       };
     }
@@ -227,7 +277,18 @@ class projDocService {
         {
           model: DocType,
           as: 'doc_type',
-          include: ['subcategory']
+          include: [
+            {
+              model: DocSubcategory,
+              as: 'subcategory',
+              include: [
+                {
+                  model: DocCategory,
+                  as: 'category'
+                }
+              ]
+            }
+          ]
         },
         {
           model: EmissionPolicy,
@@ -244,8 +305,13 @@ class projDocService {
 
     if (doc) {
       const docJson = doc.toJSON();
+      const category = docJson.doc_type?.subcategory?.category?.label || 'Autre';
+      const subcategory = docJson.doc_type?.subcategory?.label || null;
+      
       return {
         ...docJson,
+        category,
+        subcategory,
         latest_revision: docJson.revisions?.[0] || null
       };
     }
@@ -283,11 +349,32 @@ class projDocService {
       throw new AppError('Project not found', 404);
     }
 
-    // Check if document type exists
-    const docType = await DocType.findByPk(docData.doc_type_id);
+    // Check if document type exists with category and subcategory
+    const docType = await DocType.findByPk(docData.doc_type_id, {
+      include: [
+        {
+          model: DocSubcategory,
+          as: 'subcategory',
+          include: [
+            {
+              model: DocCategory,
+              as: 'category'
+            }
+          ]
+        }
+      ]
+    });
+    
     if (!docType) {
       throw new AppError('Document type not found', 404);
     }
+
+    // Extract category and subcategory from docType
+    const category = docType.subcategory?.category?.label || 'Autre';
+    const subcategory = docType.subcategory?.label || null;
+    
+    console.log(`📋 Category extracted: ${category}`);
+    console.log(`📋 Subcategory extracted: ${subcategory}`);
 
     // Check uniqueness of doc_number GLOBALLY (across ALL projects)
     const existing = await ProjDoc.findOne({
@@ -383,8 +470,14 @@ class projDocService {
         }
       }
 
-      // Create the document
-      projDoc = await ProjDoc.create(docData, { transaction });
+      // Create the document with category and subcategory
+      const docCreateData = {
+        ...docData,
+        category,
+        subcategory
+      };
+      
+      projDoc = await ProjDoc.create(docCreateData, { transaction });
 
       console.log('✅ Document created with ID:', projDoc.id);
 
@@ -618,7 +711,19 @@ class projDocService {
       include: [
         {
           model: DocType,
-          as: 'doc_type'
+          as: 'doc_type',
+          include: [
+            {
+              model: DocSubcategory,
+              as: 'subcategory',
+              include: [
+                {
+                  model: DocCategory,
+                  as: 'category'
+                }
+              ]
+            }
+          ]
         },
         {
           model: EmissionPolicy,
